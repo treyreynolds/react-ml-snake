@@ -1,8 +1,8 @@
-import { useReducer, useEffect, useRef, useCallback } from 'react';
+import { useReducer, useEffect, useRef, useCallback, useState } from "react";
 
 const offsets = {
-  n: [0, 1],
-  s: [0, -1],
+  n: [0, -1],
+  s: [0, 1],
   e: [1, 0],
   w: [-1, 0],
 };
@@ -24,11 +24,12 @@ const removeFromSnakeMap = (map, [x, y]) => {
 export function useSnake(cols, rows, speed) {
   const startCol = Math.trunc(cols / 2);
   const startRow = Math.trunc(rows / 2);
+  const [history, setHistory] = useState([]);
 
   const [game, action] = useReducer(
     ({ snake, snakeMap, alive, food, score }, action) => {
       switch (action.type) {
-        case 'move':
+        case "move":
           const [[x, y]] = snake;
           const [dX, dY] = offsets[action.value];
           const head = [x + dX, y + dY];
@@ -66,6 +67,18 @@ export function useSnake(cols, rows, speed) {
             }
           }
 
+          setHistory([
+            ...history,
+            _calculateHistoryValues(
+              cols,
+              rows,
+              snake,
+              head,
+              food,
+              action.value
+            ),
+          ]);
+
           return {
             snake,
             snakeMap,
@@ -74,7 +87,7 @@ export function useSnake(cols, rows, speed) {
             score,
           };
 
-        case 'reset':
+        case "reset":
           return {
             snake: [[startRow, startCol]],
             snakeMap: {
@@ -103,14 +116,14 @@ export function useSnake(cols, rows, speed) {
     }
   );
 
-  const directionRef = useRef('s');
+  const directionRef = useRef("s");
 
   const updateDirection = useCallback((dir) => (directionRef.current = dir), [
     directionRef,
   ]);
 
   const resetGame = () => {
-    action({ type: 'reset' });
+    action({ type: "reset" });
   };
 
   const { alive } = game;
@@ -118,7 +131,7 @@ export function useSnake(cols, rows, speed) {
   useEffect(() => {
     if (alive) {
       const interval = setInterval(() => {
-        action({ type: 'move', value: directionRef.current });
+        action({ type: "move", value: directionRef.current });
       }, speed);
 
       return () => clearInterval(interval);
@@ -126,11 +139,32 @@ export function useSnake(cols, rows, speed) {
   }, [speed, alive]);
 
   return {
+    history,
     resetGame,
     updateDirection,
     direction: directionRef.current,
     directionRef,
     ...game,
+  };
+}
+
+function _calculateHistoryValues(cols, rows, snake, head, food, direction) {
+  const toSouthWall = rows - head[1] - 1;
+  const toNorthWall = head[1];
+  const toWestWall = cols - head[0] - 1;
+  const toEastWall = head[0];
+
+  const toFoodX = food ? head[0] - food[0] : 0;
+  const toFoodY = food ? head[1] - food[1] : 0;
+
+  return {
+    toNorthWall,
+    toEastWall,
+    toSouthWall,
+    toWestWall,
+    toFoodX,
+    toFoodY,
+    direction,
   };
 }
 
