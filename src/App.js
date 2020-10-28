@@ -3,22 +3,39 @@ import { useSnake } from "./hooks";
 import _ from "lodash";
 import * as ml5 from "ml5";
 
-const columns = 30;
-const rows = 20;
+import GameBoard from "./Gameboard";
+import DebugOutput from "./DebugOutput";
+
+const cols = 40;
+const rows = 30;
+const fps = 7;
 
 const options = {
   task: "classification",
   debug: true,
+  layers: [
+    {
+      type: "dense",
+      units: 4,
+      activation: "relu",
+    },
+    {
+      type: "dense",
+      activation: "sigmoid",
+    },
+  ],
 };
 
 function App() {
-  const [speed, setSpeed] = useState(166.67);
+  const [history, setHistory] = useState([]);
   const [isTrained, setIsTrained] = useState(false);
   const [guess, setGuess] = useState(null);
+
   let nn = useRef(ml5.neuralNetwork(options));
+  const speed = 1000 / fps;
 
   const {
-    history,
+    snake,
     snakeMap,
     food,
     alive,
@@ -26,13 +43,21 @@ function App() {
     updateDirection,
     directionRef,
     resetGame,
-  } = useSnake(columns, rows, speed);
+    ticks,
+  } = useSnake(cols, rows, speed);
+
+  useEffect(() => {
+    setHistory([
+      ...history,
+      calculateHistory(snake, food, directionRef.current),
+    ]);
+  }, [ticks]);
 
   useEffect(() => {
     if (isTrained) {
       nn.current.classify(_.last(history), (err, res) => {
-        console.log(_.maxBy(res, "confidence"));
-        setGuess(_.maxBy(res, "confidence"));
+        const bestGuess = _.maxBy(res, "confidence");
+        setGuess(bestGuess);
       });
     }
   }, [history, isTrained]);
@@ -41,7 +66,7 @@ function App() {
     if (guess) {
       updateDirection(guess.label);
     }
-  }, [guess, updateDirection]);
+  }, [guess, updateDirection, directionRef]);
 
   useEffect(() => {
     const cb = (e) => {
@@ -93,57 +118,56 @@ function App() {
       nn.current.addData(inputs, output);
     });
 
-    // Step 5: normalize your data;
+    // Since data is different dimensions we have to normalize it
     nn.current.normalizeData();
 
-    // Step 6: train your neural network
+    // These training options are the default, no id if they should be set differently
     const trainingOptions = {
+      batchSize: 64,
       epochs: 32,
-      batchSize: 12,
     };
     nn.current.train(trainingOptions, () => setIsTrained(true));
   };
 
   return (
-    <div className="flex items-center justify-around h-screen bg-gray-800">
-      <GameBoard
-        snakeMap={snakeMap}
-        food={food}
-        onReset={handleResetGame}
-        alive={alive}
-      />
-      <div className="flex flex-col justify-center p-5 bg-gray-600 h-full">
-        <div className="p-3 bg-gray-400 mb-2">SCORE: {score}</div>
-        {history.length > 0 &&
-          history.slice(-10).map((h, i) => (
-            <div key={i} className="flex items-center mb-1 bg-gray-500">
-              {Object.keys(h).map((key) => (
-                <div key={key} className="w-24 mx-2">
-                  {key.replace("to", "").replace("Wall", "")}: {h[key]}
-                </div>
-              ))}
-            </div>
-          ))}
-        <div className="flex items-center justify-between mt-3 bg-gray-400 p-2">
-          <span className="inline-flex rounded-md shadow-sm">
-            <button
-              onClick={handleTraining}
-              type="button"
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:border-indigo-700 focus:shadow-outline-indigo active:bg-indigo-700 transition ease-in-out duration-150"
-            >
-              Train Model
-            </button>
-          </span>
-          {guess && (
-            <div className="text-indigo-500">
-              Guess: {guess.label}, {Math.round(guess.confidence * 100)}%
-            </div>
-          )}
-
-          <div>
-            Is Trained: <strong>{isTrained ? "Yes" : "No"}</strong>
+    <div className="flex flex-col h-screen bg-gray-800">
+      <div className="flex items-center justify-between mb-3 bg-gray-400 p-2">
+        <div>Snake Ticks {ticks}</div>
+        <span className="inline-flex rounded-md shadow-sm">
+          <button
+            onClick={handleTraining}
+            type="button"
+            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:border-indigo-700 focus:shadow-outline-indigo active:bg-indigo-700 transition ease-in-out duration-150"
+          >
+            Train Model
+          </button>
+        </span>
+        {guess && (
+          <div className="text-indigo-500">
+            Guess: {guess.label}, {Math.round(guess.confidence * 100)}%
           </div>
+        )}
+
+        <div>
+          Is Trained: <strong>{isTrained ? "Yes" : "No"}</strong>
         </div>
+      </div>
+      <div className="flex items-center justify-around">
+        <GameBoard
+          snakeMap={snakeMap}
+          food={food}
+          onReset={handleResetGame}
+          alive={alive}
+          rows={rows}
+          cols={cols}
+        />
+        <DebugOutput
+          history={history}
+          score={score}
+          onTrain={handleTraining}
+          guess={guess}
+          isTrained={isTrained}
+        />
       </div>
     </div>
   );
@@ -151,45 +175,117 @@ function App() {
 
 export default App;
 
-function GameBoard({ snakeMap, food, onReset, alive }) {
-  return (
-    <div className="border-gray-700 border-t border-r relative">
-      {_.range(0, rows).map((col) => (
-        <div className="flex items-center " key={col}>
-          {_.range(0, columns).map((row) => (
-            <div
-              className={`flex items-center justify-center w-6 h-6 border-l border-b border-gray-700 ${
-                snakeMap[row] && snakeMap[row][col] && "bg-green-400"
-              }
-                ${food && row === food[0] && col === food[1] && "bg-teal-500"}
-                `}
-              key={row}
-            />
-          ))}
-        </div>
-      ))}
-      <div
-        className={`absolute ${
-          alive ? "hidden" : ""
-        } inset-0 flex items-center justify-center`}
-      >
-        <div className="h-full flex flex-col items-center justify-center">
-          <div className="w-48 h-24 flex items-center justify-center text-white bg-gray-900">
-            <h2>You died.</h2>
-          </div>
-          <div className="w-48 bg-gray-700 p-3 flex items-center justify-end">
-            <span className="inline-flex rounded-md shadow-sm">
-              <button
-                onClick={onReset}
-                type="button"
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:border-indigo-700 focus:shadow-outline-indigo active:bg-indigo-700 transition ease-in-out duration-150"
-              >
-                Play Again?
-              </button>
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+function calculateHistory(snake, food, direction) {
+  const head = snake[0];
+
+  const dNorth = food ? Math.max(head[1] - food[1], 0) : 0;
+  const dSouth = food ? Math.max(food[1] - head[1], 0) : 0;
+  const dEast = food ? Math.max(food[0] - head[0], 0) : 0;
+  const dWest = food ? Math.max(head[0] - food[0], 0) : 0;
+
+  //const fAngle = food ? angleBetweenTwoPoints(food, head, direction) : 0;
+
+  return {
+    dEast,
+    dWest,
+    dNorth,
+    dSouth,
+    //fAngle,
+    direction,
+  };
 }
+
+function distanceBetweenPoints(p1, p2) {
+  const dx = Math.abs(p1[0] - p2[0]);
+  const dy = Math.abs(p1[1] - p2[1]);
+
+  const distance = Math.hypot(dx, dy);
+  return Math.round(distance * 10) / 10;
+}
+
+function angleBetweenTwoPoints(p1, p2, direction) {
+  const dx = p1[0] - p2[0];
+  const dy = p1[1] - p2[1];
+
+  let angle = 0;
+
+  switch (direction) {
+    case "n":
+      angle = (Math.atan2(-1 * dx, -1 * dy) * 180) / Math.PI;
+      break;
+    case "s":
+      angle = (Math.atan2(dx, dy) * 180) / Math.PI;
+      break;
+    case "w":
+      angle = (Math.atan2(-1 * dy, -1 * dx) * 180) / Math.PI;
+      break;
+    case "e":
+      angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      break;
+    default:
+      break;
+  }
+
+  return Math.round(angle * 10) / 10;
+}
+//
+// function calculateObstacles(rows, cols, head, direction) {
+//   const x = 0;
+//   const y = 1;
+//
+//   const forwardObstacle =
+//     (direction === "s" && head[y] >= rows) ||
+//     (direction === "n" && head[y] === 0) ||
+//     (direction === "e" && head[x] >= cols) ||
+//     (direction === "w" && head[x] === 0)
+//       ? 1
+//       : -1;
+//
+//   const leftObstacle =
+//     (direction === "s" && head[x] === cols - 1) ||
+//     (direction === "n" && head[x] === 0) ||
+//     (direction === "e" && head[y] === 0) ||
+//     (direction === "w" && head[y] === rows - 1)
+//       ? 1
+//       : -1;
+//
+//   const rightObstacle =
+//     (direction === "s" && head[x] === 0) ||
+//     (direction === "n" && head[x] === cols - 1) ||
+//     (direction === "e" && head[y] === rows - 1) ||
+//     (direction === "w" && head[y] === 0)
+//       ? 1
+//       : -1;
+//
+//   return [forwardObstacle, leftObstacle, rightObstacle];
+// }
+//
+// function foodDirection(head, food, direction) {
+//   const x = 0;
+//   const y = 1;
+//   const foodForward =
+//     (direction === "s" && head[x] === food[x] && head[y] < food[y]) ||
+//     (direction === "n" && head[x] === food[x] && head[y] > food[y]) ||
+//     (direction === "e" && head[y] === food[y] && head[x] < food[x]) ||
+//     (direction === "w" && head[y] === food[y] && head[x] > food[x])
+//       ? 1
+//       : -1;
+//
+//   const foodLeft =
+//     (direction === "s" && head[x] < food[x]) ||
+//     (direction === "n" && head[x] > food[x]) ||
+//     (direction === "e" && head[y] > food[y]) ||
+//     (direction === "w" && head[y] < food[y])
+//       ? 1
+//       : -1;
+//
+//   const foodRight =
+//     (direction === "s" && head[x] > food[x]) ||
+//     (direction === "n" && head[x] < food[x]) ||
+//     (direction === "e" && head[y] < food[y]) ||
+//     (direction === "w" && head[y] > food[y])
+//       ? 1
+//       : -1;
+//
+//   return [foodForward, foodLeft, foodRight];
+// }
