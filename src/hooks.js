@@ -109,9 +109,26 @@ export function useSnake(cols, rows, speed) {
 
   const directionRef = useRef("s");
 
-  const updateDirection = useCallback((dir) => (directionRef.current = dir), [
-    directionRef,
-  ]);
+  const updateDirection = useCallback(
+    (dir) => {
+      if (dir !== directionRef.current) {
+        if (game.snake.length < 2) {
+          directionRef.current = dir;
+        } else {
+          const reverseDirection =
+            (dir === "e" && directionRef.current === "w") ||
+            (dir === "w" && directionRef.current === "e") ||
+            (dir === "n" && directionRef.current === "s") ||
+            (dir === "s" && directionRef.current === "n");
+
+          if (!reverseDirection) {
+            directionRef.current = dir;
+          }
+        }
+      }
+    },
+    [directionRef, game.snake.length]
+  );
 
   const resetGame = () => {
     action({ type: "reset" });

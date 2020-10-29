@@ -5,31 +5,24 @@ import * as ml5 from "ml5";
 
 import GameBoard from "./Gameboard";
 import DebugOutput from "./DebugOutput";
+import Button from "./Button";
+
+import prebuiltTrainingData from "./training.json";
 
 const cols = 40;
 const rows = 30;
-const fps = 7;
 
 const options = {
   task: "classification",
   debug: true,
-  layers: [
-    {
-      type: "dense",
-      units: 4,
-      activation: "relu",
-    },
-    {
-      type: "dense",
-      activation: "sigmoid",
-    },
-  ],
 };
 
 function App() {
+  const [autoplay, setAutoplay] = useState(false);
   const [history, setHistory] = useState([]);
   const [isTrained, setIsTrained] = useState(false);
   const [guess, setGuess] = useState(null);
+  const [fps, setFps] = useState(8);
 
   let nn = useRef(ml5.neuralNetwork(options));
   const speed = 1000 / fps;
@@ -72,25 +65,16 @@ function App() {
     const cb = (e) => {
       switch (e.which) {
         case 37: // left
-          if (directionRef.current !== "e") {
-            updateDirection("w");
-          }
-
+          updateDirection("w");
           break;
         case 38: // up
-          if (directionRef.current !== "s") {
-            updateDirection("n");
-          }
+          updateDirection("n");
           break;
         case 39: // right
-          if (directionRef.current !== "w") {
-            updateDirection("e");
-          }
+          updateDirection("e");
           break;
         case 40: // down
-          if (directionRef.current !== "n") {
-            updateDirection("s");
-          }
+          updateDirection("s");
           break;
         default:
           break;
@@ -102,13 +86,26 @@ function App() {
     };
   }, [directionRef, updateDirection]);
 
+  useEffect(() => {
+    if (!alive && autoplay) {
+      resetGame();
+    }
+  }, [autoplay, resetGame, alive]);
+
   const handleResetGame = () => {
     resetGame();
   };
 
-  const handleTraining = (e) => {
-    e.preventDefault();
-    history.forEach((item) => {
+  const handleTraining = () => {
+    train(history);
+  };
+
+  const handlePrebuiltTraining = () => {
+    train(prebuiltTrainingData);
+  };
+
+  const train = (values) => {
+    values.forEach((item) => {
       const { direction, ...rest } = item;
       const inputs = rest;
       const output = {
@@ -124,7 +121,7 @@ function App() {
     // These training options are the default, no id if they should be set differently
     const trainingOptions = {
       batchSize: 64,
-      epochs: 32,
+      epochs: 200,
     };
     nn.current.train(trainingOptions, () => setIsTrained(true));
   };
@@ -132,16 +129,33 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-800">
       <div className="flex items-center justify-between mb-3 bg-gray-400 p-2">
-        <div>Snake Ticks {ticks}</div>
-        <span className="inline-flex rounded-md shadow-sm">
-          <button
-            onClick={handleTraining}
-            type="button"
-            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:border-indigo-700 focus:shadow-outline-indigo active:bg-indigo-700 transition ease-in-out duration-150"
+        <div className="flex items-center">
+          <Button
+            onClick={handlePrebuiltTraining}
+            color="indigo"
+            className="mr-3"
           >
+            Train With Prebuilt Model
+          </Button>
+          <Button onClick={handleTraining} color="indigo" className="mr-3">
             Train Model
-          </button>
-        </span>
+          </Button>
+
+          <Button
+            className="mr-3"
+            onClick={() => setAutoplay(!autoplay)}
+            color={autoplay ? "orange" : "green"}
+          >
+            {autoplay ? "Stop Autoplay" : "Start Autoplay"}
+          </Button>
+          <input
+            onChange={(e) => setFps(e.target.value)}
+            type="number"
+            value={fps}
+            className="border px-2 py-1 w-24"
+          />
+        </div>
+
         {guess && (
           <div className="text-indigo-500">
             Guess: {guess.label}, {Math.round(guess.confidence * 100)}%
